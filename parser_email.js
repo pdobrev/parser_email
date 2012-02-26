@@ -9,8 +9,15 @@ function ParserEmail(content) {
     var parser = this;
 
     parser.content = content;
+
+    parser.on('raw_part', parser.parse_raw_part);
 }
 util.inherits(ParserEmail, events.EventEmitter);
+
+ParserEmail.prototype.setContent = function(content) {
+    this.content = content;
+}
+
 
 ParserEmail.prototype.execute = function() {
     var parser = this;
@@ -82,20 +89,31 @@ ParserEmail.prototype.parse_multitype = function(content, boundary) {
 	if (!content || !boundary) {
 		return false;
 	}
-	//util.log('Working with boundary ' + boundary);
+	// util.log('Working with boundary ' + boundary);
+    
+    // Skip till the first --
+    if (content.indexOf('--') >= 0) {
+        content = content.substring(content.indexOf('--'));
+    }
+
+    // util.log(content.substr(0, boundary.length + 2));
 	if (content.substr(0, boundary.length + 2) != ('--' + boundary)) {
 		util.debug('Invalid Multi Part');
 		return false;
 	}
 
-    var regexp = new RegExp('--' + boundary + '\\r?\\n', 'mg');
-    //util.debug(util.inspect(regexp));
+  var regexp = new RegExp('--' + boundary + '\\r?\\n', 'mg');
+  //util.debug(util.inspect(regexp));
 	content = content.split(regexp);
 	//util.debug('Content Length: ' + content.length);
 	//Skip the first part, as it's empty
 	for (var i = 1; i < content.length; i++) {
 	    inner = true;
 	    //util.log('Parsing Part ' + i + ': ' + boundary);
+        if (content[i].indexOf("--" + boundary + "--") > -1) {
+            // cut off the last boundary
+            content[i] = content[i].substring(0, content[i].indexOf("--" + boundary + "--"));
+        }
 	    parser.parse_part(content[i]);
 	}
 }
@@ -120,20 +138,19 @@ ParserEmail.prototype.parse_part = function(content) {
 	} else {
 		content = '';
 	}
-
-	util.debug('Emitting raw part on ' + headers['content-type'].value);
+	//util.debug('Emitting raw part on ' + headers['content-type'].value);
 	parser.emit('raw_part', headers, content);
-
-	parser.parse_raw_part(headers, content);
 }
 
 ParserEmail.prototype.parse_raw_part = function(headers, content) {
+    var parser = this;
     //Rebuild some of the types
 	var main_type = headers['content-type'].value.split("\/", 1) + '';
-	util.log('Have a content type: ' + headers['content-type'].value);
-	util.log('Main Type: ' + main_type);
+	// util.log('Have a content type: ' + headers['content-type'].value);
+	// util.log('Main Type: ' + main_type);
 	switch (main_type) {
 	case 'text':
+        parser.emit('part', headers, content);
 		break;
 	case 'multipart':
 		parser.parse_multitype(content, headers['content-type'].boundary);
@@ -148,5 +165,4 @@ ParserEmail.prototype.parse_raw_part = function(headers, content) {
 		util.debug(util.inspect(headers['content-type']));
 		break;
 	}
-	parser.emit('part', headers, content);
 }
